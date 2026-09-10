@@ -1,0 +1,40 @@
+# Dependency directories (Never commit these!)
+node_modules/
+jspm_packages/
+web_modules/
+
+# Local env files containing secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data & Caches
+pids
+*.pid
+*.seed
+*.pid.lock
+.npm
+.eslintcache
+.parcel-cache
+.cache
+
+# Build outputs (Adjust based on your framework like Next.js, Nuxt, etc.)
+dist/
+build/
+.next/
+.nuxt/
+out/
