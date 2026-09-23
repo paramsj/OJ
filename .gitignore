@@ -1,0 +1,29 @@
+# Guest rootfs images — 512MB binary blobs, reproducible at any time via
+# scripts/build-rootfs.sh. Never commit these.
+images/*.ext4
+*.ext4
+
+# Compiled binaries. Builds go to /tmp today, but a bare `go build` in this
+# dir would drop an executable named `trials` here — this catches that plus
+# the historical binary names.
+trials
+trials-agent
+my-agent
+my-go-project
+oj-server
+
+# Go test/coverage artifacts (none exist yet; future-proofing).
+*.test
+*.out
+coverage.*
+
+# Firecracker + guest console logs, if FC_LOGS_DIR ever points into the repo.
+logs/
+*.log
+
+# Editor / OS droppings.
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

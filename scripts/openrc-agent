@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+# OpenRC service for the trials code-execution agent inside the guest.
+# Arrives in the container via the -v bind-mount (see build-rootfs.sh), so it
+# is already at /etc/init.d/agent before `rc-update add agent default` runs.
+
+# $RC_SVCNAME expands to the service name (`agent`).
+name=$RC_SVCNAME
+# Human-readable description shown by `rc-service agent describe` / rc-status.
+description="Trials code execution agent"
+# supervise-daemon keeps the agent alive: restarts it if it crashes, tracks
+# its PID for start/stop/status.
+supervisor="supervise-daemon"
+# The static trials binary (also bind-mounted in, then copied into the image
+# by the tar loop as /usr/local/bin/agent). Static => runs with no guest libs.
+command="/usr/local/bin/agent"
+# PID file location; supervise-daemon writes/reads it under /run (tmpfs).
+pidfile="/run/agent.pid"
+# Run as root: the agent compiles to /tmp and needs no privilege separation
+# for this single-purpose guest (no extra user is created in the image).
+command_user="root:root"
+
+# Boot ordering: start after the `net` service IF it exists. There is no
+# networking OpenRC service in any runlevel here (the guest IP arrives via the
+# kernel `ip=` cmdline the SDK injects), so this is ordering-only and never
+# blocks. (Deliberately no `need net`: that would wait on a service that is
+# never scheduled.)
+depend() {
+	after net
+}
