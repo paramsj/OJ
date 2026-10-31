@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,17 +15,21 @@ import (
 )
 
 type SubmissionRequest struct {
-	Language string `json:"language"`
-	Code     string `json:"code"`
-	Input    string `json:"input"`
+	Language    string  `json:"language"`
+	Code        string  `json:"code"`
+	Input       string  `json:"input"`
+	TimeAllowed float64 `json:"timeAllowed"`
 }
 
 type SubmissionResponse struct {
+	Verdict   string  `json:"verdict"`
 	Stdout    string  `json:"stdout"`
 	Stderr    string  `json:"stderr"`
 	TimeTaken float64 `json:"timetaken"`
 	MemUsage  int64   `json:"memusage"`
 }
+
+// Verdict for now is Sucess/Fail/Time Limit Exceeded/ idk how to enforce MLEs
 
 func CreateSubmission(c *echo.Context) error {
 	var req SubmissionRequest
@@ -56,7 +61,10 @@ func CreateSubmission(c *echo.Context) error {
 	}
 
 	var execStdOut, execStdErr bytes.Buffer
-	runCmd := exec.Command(execPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*(time.Duration(req.TimeAllowed)))
+	defer cancel()
+	runCmd := exec.CommandContext(ctx, execPath)
 
 	runCmd.Stdout = &execStdOut
 	runCmd.Stderr = &execStdErr
@@ -75,7 +83,18 @@ func CreateSubmission(c *echo.Context) error {
 		}
 	}
 
+	if ctx.Err() == context.DeadlineExceeded {
+		return c.JSON(http.StatusOK, SubmissionResponse{
+			Verdict:   "TLE",
+			Stdout:    execStdOut.String(),
+			Stderr:    stderrStr,
+			TimeTaken: elapsedTime.Seconds(),
+			MemUsage:  runCmd.ProcessState.SysUsage().(*syscall.Rusage).Maxrss,
+		})
+	}
+
 	return c.JSON(http.StatusOK, SubmissionResponse{
+		Verdict:   "Success",
 		Stdout:    execStdOut.String(),
 		Stderr:    stderrStr,
 		TimeTaken: elapsedTime.Seconds(),
