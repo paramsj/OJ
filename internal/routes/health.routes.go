@@ -7,5 +7,5 @@ import (
 )
 
 func RegisterHealthRoutes(e *echo.Echo) {
-	e.Get("/health", controllers.GetHealth)
+	e.GET("/health", controllers.GetHealth)
 }
