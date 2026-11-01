@@ -69,3 +69,6 @@ vmlinux*
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# executables
+/build
