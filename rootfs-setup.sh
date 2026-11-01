@@ -12,6 +12,8 @@ mkfs.ext4 rootfs.ext4
 mkdir /tmp/my-rootfs
 sudo mount rootfs.ext4 /tmp/my-rootfs
 
+echo "im here"
+
 docker run --rm -v /tmp/my-rootfs:/my-rootfs alpine:latest sh -c '
     apk add openrc
     apk add util-linux

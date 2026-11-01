@@ -63,6 +63,9 @@ go.work.sum
 # root filesystem image
 rootfs.ext4
 
+# kernel
+vmlinux*
+
 # Editor/IDE
 # .idea/
 # .vscode/
