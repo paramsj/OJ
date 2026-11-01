@@ -14,13 +14,19 @@ sudo mount rootfs.ext4 /tmp/my-rootfs
 
 echo "im here"
 
-docker run --rm -v /tmp/my-rootfs:/my-rootfs alpine:latest sh -c '
+docker run --rm \
+-v "$(pwd)/build/agent:/usr/bin/agent" \
+-v "$(pwd)/openrc-setup.sh:/etc/init.d/agent" \
+-v /tmp/my-rootfs:/my-rootfs alpine:latest sh -c '
+
     apk add openrc
     apk add util-linux
+    apk add --no-cache gcc libc-dev
+    apk add --no-cache g++
+
+    chmod +x /usr/bin/agent /etc/init.d/agent
 
     # to do here is to add gcc and other stuff you may require
-
-
     # Set up a login terminal on the serial console (ttyS0):
     ln -s agetty /etc/init.d/agetty.ttyS0
     echo ttyS0 > /etc/securetty
@@ -39,7 +45,9 @@ docker run --rm -v /tmp/my-rootfs:/my-rootfs alpine:latest sh -c '
     # However, this is just a warning, so you should be able to
     # proceed with the setup process.
 
-    for dir in dev proc run sys var; do mkdir /my-rootfs/${dir}; done
+    for dir in dev proc run sys var tmp; do mkdir /my-rootfs/${dir}; done
+
+    chmod 1777 /my-rootfs/tmp
 
     # All done, exit docker shell.
     exit
@@ -49,6 +57,4 @@ rm -rf /tmp/my-rootfs
 
 echo "now you can hope and pray that the rootfs was created"
 
-
-
-
+# okay, in case the script fails, YOU NEED to UMOUNT /tmp/root-fs (add)
