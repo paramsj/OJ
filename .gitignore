@@ -60,6 +60,9 @@ go.work.sum
 # env file
 .env
 
+# root filesystem image
+rootfs.ext4
+
 # Editor/IDE
 # .idea/
 # .vscode/
