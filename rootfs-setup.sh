@@ -27,6 +27,7 @@ docker run --rm \
     chmod +x /usr/bin/agent /etc/init.d/agent
 
     # to do here is to add gcc and other stuff you may require
+    
     # Set up a login terminal on the serial console (ttyS0):
     ln -s agetty /etc/init.d/agetty.ttyS0
     echo ttyS0 > /etc/securetty
@@ -36,6 +37,7 @@ docker run --rm \
     rc-update add devfs boot
     rc-update add procfs boot
     rc-update add sysfs boot
+    rc-update add agent boot
 
     # Then, copy the newly configured system to the rootfs image:
     for d in bin etc lib root sbin usr; do tar c "/$d" | tar x -C /my-rootfs; done

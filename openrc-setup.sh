@@ -1,7 +1,7 @@
 #!/sbin/openrc-run
 
 # THIS NEEDS TO GO TO /etc/init.d/putthenamehereplease
-# name is extracted from there ,DO NOT APPEND with sh
+# name is extracted from there ,
 
 name=$RC_SVCNAME
 command="/usr/bin/agent"
