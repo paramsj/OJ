@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"agentV2/internal/controllers"
+	"agentV2/internal/agent/controllers"
 
 	"github.com/labstack/echo/v5"
 )

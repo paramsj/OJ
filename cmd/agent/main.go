@@ -1,7 +1,7 @@
 package main
 
 import (
-	"agentV2/internal/routes"
+	"agentV2/internal/agent/routes"
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"

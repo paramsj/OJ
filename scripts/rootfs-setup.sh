@@ -5,17 +5,17 @@ set -e
 # if you want more just increase the count
 
 # snapshotting in the future
-dd if=/dev/zero of=rootfs.ext4 bs=1M count=1000
-mkfs.ext4 rootfs.ext4
+dd if=/dev/zero of=../rootfs.ext4 bs=1M count=1000
+mkfs.ext4 ../rootfs.ext4
 
 # mount the fs to the machines tmp, anything i put in there is with me
 mkdir -p /tmp/my-rootfs
-sudo mount rootfs.ext4 /tmp/my-rootfs
+sudo mount ../rootfs.ext4 /tmp/my-rootfs
 
 echo "im here"
 
 docker run --rm \
--v "$(pwd)/build/agent:/usr/bin/agent" \
+-v "$(pwd)/../build/agent:/usr/bin/agent" \
 -v "$(pwd)/openrc-setup.sh:/etc/init.d/agent" \
 -v /tmp/my-rootfs:/my-rootfs alpine:latest sh -c '
 

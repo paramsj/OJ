@@ -7,5 +7,5 @@ import (
 )
 
 func GetHealth(c *echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"message": "Hello, World!"})
+	return c.JSON(http.StatusOK, map[string]string{"message": "The agent is running fine!"})
 }

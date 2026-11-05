@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -e
+#there has to be a better way to do this
+rm -f ../vmlinux-*
 
 ARCH="$(uname -m)"
 S3="https://s3.amazonaws.com/spec.ccfc.min"
@@ -16,9 +18,9 @@ latest_kernel_key=$(curl -fsSL "$S3?list-type=2&prefix=${CI_ARTIFACTS_PREFIX}${A
       | tail -1)
 
 # Download a linux kernel binary
-wget "$S3/${latest_kernel_key}"
+wget -P .. "$S3/${latest_kernel_key}"
 
 echo
 echo "The following files were downloaded and set up:"
-KERNEL=$(ls vmlinux-* | tail -1)
+KERNEL=$(ls ../vmlinux-* | tail -1)
 [ -f $KERNEL ] && echo "Kernel: $KERNEL" || echo "ERROR: Kernel $KERNEL does not exist"
