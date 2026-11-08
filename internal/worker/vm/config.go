@@ -10,6 +10,11 @@ import (
 
 func GetFirecrackerConfig(VMID string) (firecracker.Config, error) {
 	sockPath, _ := getSocketPath(VMID)
+	pwd, err := os.Getwd()
+	if err != nil {
+		return firecracker.Config{}, err
+	}
+	_ = os.MkdirAll(filepath.Join(pwd, "logs", VMID), 0755)
 	return firecracker.Config{
 		SocketPath:      sockPath,
 		KernelImagePath: "/home/jaip/Desktop/agentV2/vmlinux-6.18.56",
@@ -18,6 +23,8 @@ func GetFirecrackerConfig(VMID string) (firecracker.Config, error) {
 		},
 		NetworkInterfaces: NetworkConfig(),
 		MachineCfg:        MachineConfig(),
+		LogPath:           filepath.Join(pwd, "logs", VMID, "firecracker.log"),
+		LogLevel:          "Debug",
 	}, nil
 }
 

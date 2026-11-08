@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"uuid"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
@@ -52,11 +53,15 @@ func Submit(c *echo.Context) error {
 	if err != nil {
 		panic(fmt.Errorf("failed to create new machine: %v", err))
 	}
-	defer os.Remove(cfg.SocketPath)
 	if err := m.Start(ctx); err != nil {
 		panic(fmt.Errorf("failed to initialize machine: %v", err))
 	}
-	defer m.StopVMM()
+
+	defer func() {
+		m.StopVMM()
+		os.Remove(cfg.SocketPath)
+		os.Remove(filepath.Join("/tmp/rootfs-" + VMID.String() + ".ext4"))
+	}()
 	ipAddr := m.Cfg.NetworkInterfaces[0].StaticConfiguration.IPConfiguration.IPAddr.IP
 	return c.String(http.StatusOK, ipAddr.String())
 }

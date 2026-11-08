@@ -74,3 +74,6 @@ vmlinux*
 /build
 
 # in case binaries make it to some other folder
+
+#logging
+/logs
