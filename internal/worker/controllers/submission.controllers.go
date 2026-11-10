@@ -7,29 +7,28 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"uuid"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/labstack/echo/v5"
 )
 
-// type SubmissionRequest struct {
-// 	Language    string  `json:"language"`
-// 	Code        string  `json:"code"`
-// 	Input       string  `json:"input"`
-// 	TimeAllowed float64 `json:"timeAllowed"`
-// }
+type SubmissionRequest struct {
+	Language    string  `json:"language"`
+	Code        string  `json:"code"`
+	Input       string  `json:"input"`
+	TimeAllowed float64 `json:"timeAllowed"`
+}
 
-// type SubmissionResponse struct {
-// 	Verdict   string  `json:"verdict"`
-// 	Stdout    string  `json:"stdout"`
-// 	Stderr    string  `json:"stderr"`
-// 	TimeTaken float64 `json:"timetaken"`
-// 	MemUsage  int64   `json:"memusage"`
-// }
+type SubmissionResponse struct {
+	Verdict   string  `json:"verdict"`
+	Stdout    string  `json:"stdout"`
+	Stderr    string  `json:"stderr"`
+	TimeTaken float64 `json:"timetaken"`
+	MemUsage  int64   `json:"memusage"`
+}
 
-func Submit(c *echo.Context) error {
+func Start(c *echo.Context) error {
 	// var req SubmissionRequest
 	// if err := c.Bind(&req); err != nil {
 	// 	return c.String(http.StatusBadRequest, "this was a bad request, please try again")
@@ -47,7 +46,32 @@ func Submit(c *echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusNotFound, "After config"+err.Error())
 	}
+
+	// pwd, err := os.Getwd()
+
+	// stdoutPath := filepath.Join(pwd, "logs", VMID.String(), "stdout.log")
+
+	// stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	return c.String(http.StatusNotFound, "After config"+err.Error())
+	// }
+
+	// // stderr will be directed to this file
+	// stderrPath := filepath.Join(pwd, "logs", VMID.String(), "stderr.log")
+	// stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	panic(fmt.Errorf("failed to create stderr file: %v", err))
+	// }
+
 	ctx := context.Background()
+
+	// cmd := firecracker.VMCommandBuilder{}.
+	// 	WithBin("firecracker").
+	// 	WithSocketPath(cfg.SocketPath).
+	// 	WithStdout(stdout).
+	// 	WithStderr(stderr).
+	// 	Build(ctx)
+
 	m, err := firecracker.NewMachine(ctx, cfg)
 
 	if err != nil {
@@ -58,9 +82,9 @@ func Submit(c *echo.Context) error {
 	}
 
 	defer func() {
-		m.StopVMM()
-		os.Remove(cfg.SocketPath)
-		os.Remove(filepath.Join("/tmp/rootfs-" + VMID.String() + ".ext4"))
+		// m.StopVMM() //is this goes i go with it
+		// os.Remove(cfg.SocketPath)
+		// os.Remove(filepath.Join("/tmp/rootfs-" + VMID.String() + ".ext4"))
 	}()
 	ipAddr := m.Cfg.NetworkInterfaces[0].StaticConfiguration.IPConfiguration.IPAddr.IP
 	return c.String(http.StatusOK, ipAddr.String())

@@ -5,10 +5,10 @@
 
 name=$RC_SVCNAME
 command="/usr/bin/agent"
-pidfile="/run/$RC_SVCNAME/$RC_SVCNAME.pid"
+pidfile="/run/$RC_SVCNAME.pid"
 command_background="yes"
 
 depend() {
-    need net
+    after net
     need localmount
 }

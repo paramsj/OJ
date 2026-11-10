@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -e
 #there has to be a better way to do this
-rm -f ../vmlinux-*
 
+SCRIPT_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIRECTORY/.." && pwd)"
+
+set -o allexport
+source "$PROJECT_ROOT/.env"
+set +o allexport
+
+rm -f "${KERNEL_PATH}"/vmlinux-*
+mkdir -p "${KERNEL_PATH}"
 ARCH="$(uname -m)"
 S3="https://s3.amazonaws.com/spec.ccfc.min"
 
@@ -18,9 +26,10 @@ latest_kernel_key=$(curl -fsSL "$S3?list-type=2&prefix=${CI_ARTIFACTS_PREFIX}${A
       | tail -1)
 
 # Download a linux kernel binary
-wget -P .. "$S3/${latest_kernel_key}"
+wget -O "${KERNEL_PATH}"/vmlinux "$S3/${latest_kernel_key}"
 
+echo "VMLINUX Version : ${latest_kernel_key}"
 echo
 echo "The following files were downloaded and set up:"
-KERNEL=$(ls ../vmlinux-* | tail -1)
+KERNEL=$(ls "${KERNEL_PATH}"/vmlinux | tail -1)
 [ -f $KERNEL ] && echo "Kernel: $KERNEL" || echo "ERROR: Kernel $KERNEL does not exist"

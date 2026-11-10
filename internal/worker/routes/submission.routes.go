@@ -7,5 +7,6 @@ import (
 )
 
 func RegisterSubmissionRoutes(e *echo.Echo) {
-	e.GET("/submit", controllers.Submit)
+	e.GET("/start", controllers.Start)
+	// e.POST("/submit", controllers.Submit)
 }
