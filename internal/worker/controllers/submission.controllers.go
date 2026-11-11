@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"uuid"
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
@@ -35,8 +36,8 @@ func Start(c *echo.Context) error {
 	// }
 
 	VMID := uuid.NewV4()
-
-	_, err := copyFS("/home/jaip/Desktop/agentV2/rootfs.ext4", "/tmp/rootfs-"+VMID.String()+".ext4")
+	ROOTFS := filepath.Join(os.Getenv("ROOTFS_PATH"), "rootfs.ext4")
+	_, err := copyFS(ROOTFS, "/tmp/rootfs-"+VMID.String()+".ext4")
 
 	if err != nil {
 		return c.String(http.StatusNotFound, "We are here"+err.Error())
@@ -47,32 +48,32 @@ func Start(c *echo.Context) error {
 		return c.String(http.StatusNotFound, "After config"+err.Error())
 	}
 
-	// pwd, err := os.Getwd()
+	pwd, err := os.Getwd()
 
-	// stdoutPath := filepath.Join(pwd, "logs", VMID.String(), "stdout.log")
+	stdoutPath := filepath.Join(pwd, "logs", VMID.String(), "stdout.log")
 
-	// stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	return c.String(http.StatusNotFound, "After config"+err.Error())
-	// }
+	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return c.String(http.StatusNotFound, "After config"+err.Error())
+	}
 
-	// // stderr will be directed to this file
-	// stderrPath := filepath.Join(pwd, "logs", VMID.String(), "stderr.log")
-	// stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	panic(fmt.Errorf("failed to create stderr file: %v", err))
-	// }
+	// stderr will be directed to this file
+	stderrPath := filepath.Join(pwd, "logs", VMID.String(), "stderr.log")
+	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		panic(fmt.Errorf("failed to create stderr file: %v", err))
+	}
 
 	ctx := context.Background()
 
-	// cmd := firecracker.VMCommandBuilder{}.
-	// 	WithBin("firecracker").
-	// 	WithSocketPath(cfg.SocketPath).
-	// 	WithStdout(stdout).
-	// 	WithStderr(stderr).
-	// 	Build(ctx)
+	cmd := firecracker.VMCommandBuilder{}.
+		WithBin("firecracker").
+		WithSocketPath(cfg.SocketPath).
+		WithStdout(stdout).
+		WithStderr(stderr).
+		Build(ctx)
 
-	m, err := firecracker.NewMachine(ctx, cfg)
+	m, err := firecracker.NewMachine(ctx, cfg, firecracker.WithProcessRunner(cmd))
 
 	if err != nil {
 		panic(fmt.Errorf("failed to create new machine: %v", err))

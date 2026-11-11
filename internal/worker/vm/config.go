@@ -16,8 +16,9 @@ func GetFirecrackerConfig(VMID string) (firecracker.Config, error) {
 	}
 	_ = os.MkdirAll(filepath.Join(pwd, "logs", VMID), 0755)
 	return firecracker.Config{
-		SocketPath:      sockPath,
-		KernelImagePath: "/home/jaip/Desktop/agentV2/vmlinux-6.18.56",
+		SocketPath: sockPath,
+		// KERNEL_PATH/vmlinux
+		KernelImagePath: filepath.Join(os.Getenv("KERNEL_PATH"), "vmlinux"),
 		Drives: []models.Drive{
 			DriveConfig(VMID),
 		},
