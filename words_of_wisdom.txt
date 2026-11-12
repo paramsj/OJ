@@ -1,0 +1,140 @@
+A Firecracker snapshot is three things on disk: the guest's entire physical RAM (vm.mem), the VMM's serialized device and CPU state (vm.state), and the rootfs disk. Restoring it is not a boot — it's mapping that memory file copy-on-write, loading the device state, and unpausing the vCPUs. The reason restore lands in tens of milliseconds rather than reading a multi-gigabyte memory image off disk first is a single design choice: the memory file is mapped with MAP_PRIVATE, so the kernel pages it in lazily, only when the guest touches a page. This post walks the actual mechanics — what each artifact contains, how copy-on-write page-in works, the difference between a full and a diff snapshot, and how userfaultfd lets PandaStack stream vm.mem from object storage so a cross-host restore doesn't download the whole RAM image before the guest can run.
+What a Firecracker snapshot actually contains
+
+A microVM is a real machine frozen mid-execution: a guest kernel with live page tables, a vCPU with registers and a program counter sitting between two instructions, and a set of virtio devices each holding configuration and queue state. A snapshot serializes all of it at one instant into a small, fixed set of files.
+
+    vm.mem — the guest's entire physical RAM, byte for byte. This is the large artifact: a 2 GiB guest produces a 2 GiB memory file. Everything the guest was holding — the page cache, running process memory, kernel data structures — lives here.
+    vm.state — the VMM's serialized state: vCPU registers, the in-kernel interrupt controller (KVM), the clock, and every virtio device's configuration and queue pointers. It's tiny compared to vm.mem, but it's what lets the guest resume mid-instruction instead of rebooting.
+    rootfs — the disk. PandaStack clones the ext4 rootfs as a copy-on-write image (XFS reflink) rather than copying every block, so it shares data extents with the template until the guest writes.
+
+The property that matters is that this is a paused running machine, not a disk image you boot from. Restore it and the guest sees no reboot: processes that were mid-execution keep running, the page cache stays warm, open files stay open, there is no init or systemd handshake. That's the whole reason restore is measured in milliseconds while a cold boot is measured in seconds.
+vm.state without vm.mem is useless and vice versa — registers point into RAM, and RAM is meaningless without the CPU and device state that interprets it. A Firecracker snapshot is the pair, plus the rootfs the guest was running against.
+Creating and loading a snapshot: the API calls
+
+Firecracker exposes snapshot operations over its HTTP API socket. To create one you first pause the vCPUs (you can't serialize a moving target), then ask for the snapshot, which writes vm.state and vm.mem. Restoring is the inverse: launch a fresh Firecracker process and tell it to load those two files, then resume.
+
+# --- Create a snapshot of a running guest ---
+# 1. Pause the vCPUs so state is consistent
+curl --unix-socket /run/fc.sock -X PATCH 'http://localhost/vm' \
+  -d '{"state": "Paused"}'
+
+# 2. Write vm.state + vm.mem to disk (Full = the whole RAM image)
+curl --unix-socket /run/fc.sock -X PUT 'http://localhost/snapshot/create' \
+  -d '{
+        "snapshot_type": "Full",
+        "snapshot_path": "/snap/vm.state",
+        "mem_file_path": "/snap/vm.mem"
+      }'
+
+# --- Restore into a fresh Firecracker process ---
+# 3. Load the snapshot. mem_backend.backend_type "File" maps vm.mem directly.
+curl --unix-socket /run/fc2.sock -X PUT 'http://localhost/snapshot/load' \
+  -d '{
+        "snapshot_path": "/snap/vm.state",
+        "mem_backend": {"backend_type": "File", "backend_path": "/snap/vm.mem"},
+        "resume_vm": false
+      }'
+
+# 4. Unpause — the guest resumes exactly where it froze
+curl --unix-socket /run/fc2.sock -X PATCH 'http://localhost/vm' \
+  -d '{"state": "Resumed"}'
+
+On PandaStack the agent drives these same calls. In the create pipeline, POST /snapshot/load is the ~49ms stage that maps vm.mem and loads device state, and the Resume PATCH (~6ms) unpauses the vCPUs — the two together are the heart of a create that lands at a 179ms p50 and roughly a 203ms p99. The backend_type field is the interesting knob: "File" maps the local memory file; the alternative, which we'll get to, is to back guest memory with a userfaultfd so the bytes can come from somewhere other than a local file.
+Why restore doesn't read the whole RAM image: MAP_PRIVATE
+
+The naive mental model of "load a 2 GiB snapshot" is "read 2 GiB off disk into memory, then run." If that's what happened, restore latency would scale with guest RAM and forking would be ruinously expensive. It isn't what happens. When Firecracker loads the File backend, it memory-maps vm.mem with MAP_PRIVATE — and that flag changes everything.
+
+A MAP_PRIVATE mapping is lazy and copy-on-write at the page granularity:
+
+    Nothing is eagerly copied at load time. The mapping just establishes that the guest's physical RAM is backed by this file. No bytes move yet.
+    A read fault — the guest touches a page it hasn't touched since restore — is resolved by the kernel mapping that 4 KiB page straight from the file, no copy. Multiple guests restoring the same snapshot share those identical read-only pages in the page cache.
+    A write fault triggers the copy-on-write: the kernel makes a private 4 KiB copy of just that one page for this guest, and the original file page stays pristine for everyone else.
+
+The consequence is that you only pay, in time and RAM, for the pages the guest actually touches between resume and ready — its working set — not for the full image. A guest with 2 GiB of RAM that touches a few hundred megabytes to reach a usable state pays for a few hundred megabytes. The rest of vm.mem is never read. This is also why the ~49ms snapshot-load stage doesn't grow with guest memory size: it's mapping a file, not copying it.
+MAP_PRIVATE is the same copy-on-write trick that makes fork() of a Unix process cheap — applied to a whole virtual machine's RAM. The guest believes it owns 2 GiB; the kernel only materializes the pages it reaches for.
+Full snapshots vs diff snapshots
+
+Firecracker supports two snapshot types, and the difference is entirely about which pages of vm.mem get written.
+
+    Full snapshot — writes the guest's complete physical RAM. Self-contained: you can restore it standalone, on any host, with no dependency on a prior snapshot. This is what you bake a template from.
+    Diff snapshot — writes only the guest pages that have been dirtied since the base snapshot (Firecracker tracks dirty pages via KVM's dirty-page log). A diff is much smaller, but it isn't restorable on its own — you reconstruct the full memory state by layering the diff on top of its base.
+
+Diff snapshots are the building block for incremental checkpointing: take a full base, then periodically capture only what changed, which is far cheaper than re-serializing the whole RAM each time. The trade is restore complexity and a dependency chain — a diff is only as good as the base it layers onto. For PandaStack's template model, where every create restores a clean baked baseline, a self-contained full snapshot is the right primitive; the baked template is captured once and restored constantly.
+Streaming vm.mem from object storage with userfaultfd
+
+MAP_PRIVATE is great when vm.mem is already on the local disk. But in a multi-host fleet, snapshots are published to object storage so any agent can restore any template — and the memory file might not be local yet. The naive path is: download the whole multi-gigabyte vm.mem to local disk, then restore with the File backend. That download is pure dead time, and most of those bytes are pages this boot will never touch. Firecracker's UFFD backend is how you delete the wait.
+
+Instead of pointing Firecracker at a local file, you hand it a userfaultfd — a Linux kernel feature that delivers page-fault events to a user-space handler. Now the guest's memory faults route to PandaStack's agent, which fetches the page on demand. The flow per fault:
+
+    The agent opens a userfaultfd handler on a Unix socket and starts Firecracker in UFFD restore mode. Firecracker connects and sends the userfaultfd descriptor (via SCM_RIGHTS) plus the layout mapping guest-physical regions to offsets in vm.mem.
+    The guest resumes and touches a page that hasn't been populated. The CPU raises a fault; the kernel sees the address is registered with userfaultfd and, instead of resolving it, posts an event and parks the faulting vCPU.
+    The handler reads the event, translates the faulting guest address into an offset in vm.mem, and fetches the surrounding 4 MiB chunk from object storage over an HTTP Range GET.
+    It installs the bytes with UFFDIO_COPY, which atomically places the page(s) and wakes the parked vCPU. The vCPU resumes exactly where it faulted, never knowing the page came over the network.
+
+The payoff is that an agent can restore a template it has never held locally without first downloading a multi-gigabyte memory image — the guest pulls only the pages it actually touches. Be precise about scope, though: UFFD streams memory, not the disk. The rootfs still has to be a local file because copy-on-write disk cloning (reflink or dm-snapshot) needs a local block device. Streaming removes the big vm.mem download specifically.
+Streaming is a real trade, not free magic. The first restore of a template on a cold host still pays object-storage latency for its working set, and any fault that misses cache is a network round trip rather than a memory read. It wins clearly for fleets restoring the same templates repeatedly; for a one-off restore on a cold host, a plain local File restore can be simpler.
+Two optimizations: zero-page elision and hot-page prefetch
+
+On-demand paging over the network is only viable if you avoid fetching bytes you don't need and hide the latency of the bytes you do. Two tricks do most of that work.
+Zero-page elision
+
+A surprising fraction of a guest's RAM is zero — freshly zeroed pages the OS allocated but never wrote. Shipping zeros over the network is wasteful. At bake time PandaStack records a header marking which chunks of vm.mem actually contain non-zero data. On restore, a fault that lands in an all-zero region is served with UFFDIO_ZEROPAGE — a zero-fill with no fetch at all — and only chunks with real content are pulled from storage. Untouched zero memory costs nothing.
+Hot-page prefetch
+
+The path from resume to ready is largely deterministic — a given template touches roughly the same hot set of pages every restore. So at bake time PandaStack records that hot chunk set as a prefetch trace and replays it in the background the moment restore begins. The streamer races ahead of the guest, pulling the chunks it's about to need, so that by the time a vCPU faults, the chunk is frequently already in a local per-host cache — a hit instead of a network round trip. Combined with 4 MiB chunking (which amortizes one Range GET across 1,024 pages) and a shared per-host chunk cache, streamed restore stays close to local-disk speed for the common case of restoring familiar templates.
+Same primitive: create, fork, and the SDK
+
+Once you see restore as "map a memory file copy-on-write and resume," the rest of PandaStack's lifecycle falls out of the same primitive. A create restores the generic baked template snapshot. A fork snapshots a specific running sandbox and restores that — same MAP_PRIVATE memory map, same reflinked rootfs, just starting from your live machine. A same-host fork runs in roughly 400–750ms because the parent's memory is already resident and the rootfs reflinks locally; a cross-host fork is 1.2–3.5s because the artifacts have to move over the network first. From the SDK it's a couple of lines:
+
+from pandastack import Sandbox
+
+# Create restores a baked template snapshot (p50 ~179ms, ~49ms is the load step)
+box = Sandbox.create(template="base", ttl_seconds=3600)
+box.exec("git clone --depth 1 https://github.com/acme/service /work")
+box.exec("cd /work && npm ci")  # build up warm in-memory + on-disk state
+
+# Snapshot freezes this running machine's RAM + device state + rootfs
+checkpoint = box.snapshot()
+
+# Fork restores that frozen machine copy-on-write (~400-750ms same-host).
+# The child shares vm.mem pages with the parent until it writes them.
+branch = box.fork()
+print(branch.id, "branched from", checkpoint)
+
+snapshot() captures the same three artifacts Firecracker writes — vm.mem, vm.state, and a copy-on-write rootfs — and fork() restores them with the lazy, copy-on-write map this whole post is about. The child inherits everything the parent had in RAM and on disk, and only allocates private memory for the pages it actually changes.
+The summary
+
+A Firecracker memory snapshot is the guest's RAM (vm.mem) plus the VMM's device and CPU state (vm.state) plus the rootfs — a frozen running machine, not a disk image. Restore maps that memory with MAP_PRIVATE so the kernel pages it in lazily and copy-on-write, which is precisely why you don't pay for the whole RAM image up front and why the ~49ms load step doesn't grow with guest size. Full snapshots are self-contained baselines; diff snapshots layer only dirtied pages for cheap incremental checkpoints. And when the memory file isn't local, userfaultfd turns the same on-demand page-in into a network stream — fetching 4 MiB chunks from object storage, eliding zeros, and prefetching the hot set — so a cross-host restore starts before the multi-gigabyte image has arrived.
+
+Every sandbox, managed Postgres database, and git-driven app on PandaStack runs on exactly this path, and the core is open source under Apache-2.0 — so you can run the control-plane API and per-host agent on your own Linux KVM hosts and watch the restore timings yourself. For the boot-vs-restore distinction start with How PandaStack Creates a MicroVM in Under 200ms; for the streaming mechanics, userfaultfd: Lazy Memory for Instant VM Restore.
+Frequently asked questions
+What is in a Firecracker memory snapshot?
+
+Why doesn't restoring a snapshot read the whole memory image off disk?
+
+Because Firecracker maps vm.mem with MAP_PRIVATE, which is lazy and copy-on-write at the page level. At load time nothing is copied — the mapping just points the guest's RAM at the file. A page is faulted in by the kernel only when the guest first touches it, and a write triggers a private copy of just that 4 KiB page. So restore only pays for the working set the guest actually touches, not the full image, which is why the snapshot-load step (~49ms on PandaStack) doesn't scale with guest RAM size.
+What's the difference between a full snapshot and a diff snapshot?
+
+A full snapshot writes the guest's complete physical RAM and is self-contained — you can restore it standalone on any host. A diff snapshot writes only the pages dirtied since a base snapshot (Firecracker tracks them via KVM's dirty-page log), so it's much smaller but isn't restorable alone; you reconstruct full memory by layering the diff on its base. Diffs are the building block for cheap incremental checkpointing; full snapshots are what you bake a restorable template from.
+How can a microVM restore without downloading the whole vm.mem first?
+
+By streaming memory on demand with userfaultfd. Instead of a local memory file, Firecracker is handed a userfaultfd and the agent backs guest memory itself. When the guest faults on a page, the kernel posts the fault to the agent's handler, which fetches the surrounding 4 MiB chunk from object storage over an HTTP Range GET and installs it with UFFDIO_COPY. The guest only pulls the pages it touches. All-zero chunks are elided (no fetch), and a prefetch trace warms the hot set, so a cross-host restore can start before the multi-gigabyte image has arrived. UFFD streams memory only — the rootfs still has to be a local file for copy-on-write disk cloning.
+Related posts
+
+    userfaultfd: Lazy Memory for Instant VM Restore
+
+    userfaultfd hands a page fault to your own code instead of the kernel resolving it. That one inversion is what lets a microVM resume before its whole memory image has arrived — PandaStack uses it to stream vm.mem from object storage on restore.
+    The Snapshot-Restore Boot Path: Every Sandbox in Under 200ms
+
+    PandaStack has no warm pool of idle VMs. Every create restores a baked Firecracker snapshot on demand — allocate a pre-built network slot, copy-on-write the rootfs, load the snapshot, resume, probe the guest. Idle cost is ~0 and create lands at a 179ms p50.
+    Kill Cold Starts with microVM Snapshotting: Warm Starts Without a Warm Pool
+
+    A warm pool is you paying the cloud to keep computers awake in case someone shows up. microVM snapshotting flips it: freeze a booted VM once, restore it copy-on-write on demand, and pay ~0 while nobody's home.
+    How Firecracker Restores Guest Memory: mmap & MAP_PRIVATE
+
+    On restore, Firecracker mmaps the guest's whole RAM image (vm.mem) MAP_PRIVATE and resumes — so the restore lies to the guest: all its RAM is 'there,' none of it is loaded yet. Pages fault in lazily on first touch. Here's the exact kernel mechanics, and why it makes restore O(1) and many VMs share memory.
+    Copy-on-Write and the Page-Fault Lifecycle, Step by Step
+
+    When a forked microVM stores to a shared page, the CPU traps into the kernel and a copy-on-write fault quietly hands that VM its own copy. This is the mechanism under fast restore and cheap forks — page tables, the MMU, minor vs major faults, and the CoW fault lifecycle from first-touch to writable, one 4 KiB page at a time.
+
+More in Firecracker & microVMs · See Firecracker microVM sandboxes

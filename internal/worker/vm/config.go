@@ -21,6 +21,7 @@ func GetFirecrackerConfig(VMID string) (firecracker.Config, error) {
 		KernelImagePath: filepath.Join(os.Getenv("KERNEL_PATH"), "vmlinux"),
 		Drives: []models.Drive{
 			DriveConfig(VMID),
+			AdditionalDriveConfig(VMID),
 		},
 		NetworkInterfaces: NetworkConfig(),
 		MachineCfg:        MachineConfig(),

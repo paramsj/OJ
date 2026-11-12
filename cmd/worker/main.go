@@ -1,7 +1,9 @@
 package main
 
 import (
+	"agentV2/internal/worker/controllers"
 	"agentV2/internal/worker/routes"
+	"agentV2/internal/worker/vm"
 	"context"
 	"os"
 	"os/signal"
@@ -13,13 +15,15 @@ import (
 )
 
 func main() {
+	newmgr := vm.NewManager()
+	ctrl := controllers.NewController(newmgr)
 	e := echo.New()
 
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
 	routes.RegisterWorkerHealth(e)
-	routes.RegisterSubmissionRoutes(e)
+	routes.RegisterSubmissionRoutes(e, ctrl)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

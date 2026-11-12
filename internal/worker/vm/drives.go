@@ -7,10 +7,19 @@ import (
 
 func DriveConfig(VMID string) models.Drive {
 	return models.Drive{
-		IsReadOnly:   firecracker.Bool(false),
+		IsReadOnly:   firecracker.Bool(true),
 		IsRootDevice: firecracker.Bool(true),
 		// VeryLargeUUID-rootfs.ext4
 		PathOnHost: firecracker.String("/tmp/rootfs-" + VMID + ".ext4"),
 		DriveID:    firecracker.String("rootfs"),
+	}
+}
+
+func AdditionalDriveConfig(VMID string) models.Drive {
+	return models.Drive{
+		IsReadOnly:   firecracker.Bool(false),
+		IsRootDevice: firecracker.Bool(false),
+		PathOnHost:   firecracker.String("/tmp/rootfs-" + VMID + ".ext4"),
+		DriveID:      firecracker.String("scratchpad"),
 	}
 }
