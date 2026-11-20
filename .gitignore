@@ -77,3 +77,5 @@ vmlinux*
 
 #logging
 /logs
+
+firecracker
