@@ -38,12 +38,12 @@ sudo docker run --rm \
     chmod +x /usr/bin/agent /etc/init.d/agent
     
     # Set up a login terminal on the serial console (ttyS0) -> uncomment to debug it hijacks my terminals:
-    ln -s agetty /etc/init.d/agetty.ttyS0
-    echo ttyS0 > /etc/securetty
-    rc-update add agetty.ttyS0 default
+    # ln -s agetty /etc/init.d/agetty.ttyS0
+    # echo ttyS0 > /etc/securetty
+    # rc-update add agetty.ttyS0 default
 
     echo "Adding Services top OpenRC"
-    echo "root:root" | chpasswd
+    # echo "root:root" | chpasswd
 
     # Make sure special file systems are mounted on boot:
     rc-update add devfs boot

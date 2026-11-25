@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
+	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.4.4
 )
 

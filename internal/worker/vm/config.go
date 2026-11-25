@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -15,13 +16,13 @@ func GetFirecrackerConfig(VMID string) (firecracker.Config, error) {
 		return firecracker.Config{}, err
 	}
 	_ = os.MkdirAll(filepath.Join(pwd, "logs", VMID), 0755)
+	fmt.Println("the kernel was taken from which directory" + os.Getenv("KERNEL_PATH"))
 	return firecracker.Config{
 		SocketPath: sockPath,
 		// KERNEL_PATH/vmlinux
 		KernelImagePath: filepath.Join(os.Getenv("KERNEL_PATH"), "vmlinux"),
 		Drives: []models.Drive{
 			DriveConfig(VMID),
-			AdditionalDriveConfig(VMID),
 		},
 		NetworkInterfaces: NetworkConfig(),
 		MachineCfg:        MachineConfig(),

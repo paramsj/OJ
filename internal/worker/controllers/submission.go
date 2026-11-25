@@ -31,11 +31,15 @@ type SubmissionResponse struct {
 }
 
 type Controller struct {
-	vms *vm.Manager
+	vms        *vm.Manager
+	WarmVMPool chan *vm.VM
 }
 
 func NewController(m *vm.Manager) *Controller {
-	return &Controller{vms: m}
+	return &Controller{
+		vms:        m,
+		WarmVMPool: make(chan *vm.VM, 20),
+	}
 }
 
 func (h *Controller) Start(c *echo.Context) error {
@@ -90,13 +94,17 @@ func (h *Controller) Delete(c *echo.Context) error {
 
 }
 
-// func (h *Controller) Submit(c *echo.Context) error {
-// 	var req SubmissionRequest
-// 	if err := c.Bind(req); err != nil {
-// 		return c.String(http.StatusBadRequest, "Malformed request was sent\n")
-// 	}
-// 	// now i should take a request from the channel and use it
-// }
+func (h *Controller) Submit(c *echo.Context) error {
+	var req SubmissionRequest
+	if err := c.Bind(req); err != nil {
+		return c.String(http.StatusBadRequest, "Malformed request was sent\n")
+	}
+	var instance *vm.VM
+	select {
+	case instance <- main.WarmVMPool:
+
+	}
+}
 
 func delete(v *vm.VM) {
 	v.Machine.StopVMM()
@@ -143,8 +151,10 @@ func (h *Controller) create() (*vm.VM, error) {
 	// all above
 	ctx := context.Background()
 
+	BinPath := filepath.Join(os.Getenv("FIRECRACKER_BINARY_PATH"), "firecracker")
+	fmt.Println("firecracker binary is at", BinPath)
 	cmd := firecracker.VMCommandBuilder{}.
-		WithBin("firecracker").
+		WithBin(BinPath).
 		WithSocketPath(cfg.SocketPath).
 		WithStdout(stdout).
 		WithStderr(stderr).
